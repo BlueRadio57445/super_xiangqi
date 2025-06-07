@@ -35,7 +35,7 @@ INITIAL = (
     '          \n'
     '          \n'
     )
-N_SIMULATIONS = 100  # MCTS 模擬次數
+N_SIMULATIONS = 10  # MCTS 模擬次數
 BATCH_SIZE = 1024  # mini-batch 大小
 EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
 ITERATIONS = 100  # 訓練幾代模型
@@ -44,49 +44,61 @@ EVAL_GAMES = 20  # 評估遊戲數量
 WIN_THRESHOLD = 0.55  # 勝率閾值
 DIRICHLET_ALPHA = 0.3
 
+class ResidualBlock(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+
+    def forward(self, x):
+        residual = x
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        return F.relu(out + residual)
 
 class ChessNet(nn.Module):
-    def __init__(self):
+    def __init__(self, num_res_blocks=3):
         super().__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels=112, out_channels=256, kernel_size=5, padding=2),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, padding=2),
-            nn.Tanh(),
-        )
-        self.fc1 = nn.Sequential(
-            nn.Linear(256*10*9, 1024),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 1024),
         )
+        self.res_blocks = nn.ModuleList([
+            ResidualBlock(256) for _ in range(num_res_blocks)
+        ])
         self.value_head = nn.Sequential(
-            nn.Linear(1024, 64),
+            nn.Conv2d(256, 1, kernel_size=1, bias=False),
+            nn.BatchNorm2d(1),
             nn.ReLU(),
-            nn.Linear(64, 16),
+            nn.Flatten(),
+            nn.Linear(10*9, 256),
             nn.ReLU(),
-            nn.Linear(16, 1),
+            nn.Linear(256, 1),
             nn.Tanh()
         )
         self.policy_head = nn.Sequential(
-            nn.Linear(1024, 1024),
+            nn.Conv2d(256, 52, kernel_size=1, bias=False),
+            nn.BatchNorm2d(52),
             nn.ReLU(),
-            nn.Linear(1024, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 10*9*52),
+            nn.Flatten(),
+            nn.Linear(52*10*9, 10*9*52)
         )
 
     def forward(self, x):
         x = self.conv1(x)
-        batch_size = x.size(0)
-        x = x.view(batch_size, 256 * 10 * 9)
-        x = self.fc1(x)
-
+        
+        for res_block in self.res_blocks:
+            x = res_block(x)
+        
         policy = self.policy_head(x)
-        policy = policy.view(batch_size, 10, 9, 52) 
-
+        policy = policy.view(x.size(0), 10, 9, 52)
+         
         value = self.value_head(x)
+        
         return policy, value
     
 class MCTSNode:
