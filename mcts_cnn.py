@@ -374,7 +374,7 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
     mcts_old = MCTS(net_old)
 
     with tqdm.tqdm(range(n_games), desc="Eval BIG") as pbar:
-        for _ in range(n_games):
+        for game_idx in range(n_games):
             board_state = BoardState(INITIAL)
             last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
             counts = Counter()
