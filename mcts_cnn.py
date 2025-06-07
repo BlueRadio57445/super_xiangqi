@@ -36,10 +36,10 @@ INITIAL = (
     '          \n'
     )
 N_SIMULATIONS = 10  # 論文中的 MCTS 模擬次數
-BATCH_SIZE = 4096  # 論文中的 mini-batch 大小
+BATCH_SIZE = 1024  # 論文中的 mini-batch 大小
 TRAINING_STEPS = 700000  # 論文中的訓練步數
 SELF_PLAY_GAMES = 20 # 自我對弈的場數
-EVAL_GAMES = 100  # 論文中的評估遊戲數量
+EVAL_GAMES = 20  # 論文中的評估遊戲數量
 WIN_THRESHOLD = 0.55  # 論文中的勝率閾值
 DIRICHLET_ALPHA = 0.3
 
