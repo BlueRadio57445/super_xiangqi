@@ -35,12 +35,13 @@ INITIAL = (
     '          \n'
     '          \n'
     )
-N_SIMULATIONS = 10  # 論文中的 MCTS 模擬次數
-BATCH_SIZE = 1024  # 論文中的 mini-batch 大小
-ITERATIONS = 100  # 論文中的訓練步數
+N_SIMULATIONS = 100  # MCTS 模擬次數
+BATCH_SIZE = 1024  # mini-batch 大小
+EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
+ITERATIONS = 100  # 訓練幾代模型
 SELF_PLAY_GAMES = 20 # 自我對弈的場數
-EVAL_GAMES = 20  # 論文中的評估遊戲數量
-WIN_THRESHOLD = 0.55  # 論文中的勝率閾值
+EVAL_GAMES = 20  # 評估遊戲數量
+WIN_THRESHOLD = 0.55  # 勝率閾值
 DIRICHLET_ALPHA = 0.3
 
 
@@ -325,7 +326,7 @@ def self_play_game(net:ChessNet):
     return data, result
     
 
-def train(net:ChessNet, data, epochs=10, batch_size=BATCH_SIZE):
+def train(net:ChessNet, data, epochs=EPOCHS, batch_size=BATCH_SIZE):
     device = next(net.parameters()).device
     optimizer = prodigyopt.Prodigy(net.parameters())
     for epoch in tqdm.tqdm(range(epochs), desc="Training Epochs"):
