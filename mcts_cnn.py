@@ -379,6 +379,11 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
             counts = Counter()
             counts[board_state.board] = 1
             move_count = 0
+
+            # 偶數場次：新模型先手 (紅方)
+            # 奇數場次：舊模型先手 (紅方)
+            new_model_plays_red = (game_idx % 2 == 0)
+
             with tqdm.tqdm(desc="Eval Game",leave=False) as pbar2:
                 while True:
 
@@ -390,8 +395,13 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                         terminal_result = 0
                         break
                     
+                    # 選擇模型：紅方 (move_count % 2 == 0) 時
+                    if move_count % 2 == 0:  # 紅方回合
+                        mcts = mcts_new if new_model_plays_red else mcts_old
+                    else:  # 黑方回合
+                        mcts = mcts_old if new_model_plays_red else mcts_new
+
                     # 搜尋
-                    mcts = mcts_new if move_count % 2 == 0 else mcts_old
                     pi, _ = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
 
                     # 選取動作
@@ -407,12 +417,17 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                     move_count += 1
                     pbar2.update(1)
 
+            # 計算結果 (從新模型的角度)
             if terminal_result == 0:
-                draws +=1
-            elif (terminal_result == 1 and move_count % 2 == 0) or (terminal_result == -1 and move_count % 2 == 1):
-                wins += 1
+                draws += 1
             else:
-                losses += 1
+                # 判斷新模型是否獲勝
+                red_wins = (terminal_result == 1 and move_count % 2 == 0) or (terminal_result == -1 and move_count % 2 == 1)
+                
+                if (new_model_plays_red and red_wins) or (not new_model_plays_red and not red_wins):
+                    wins += 1  # 新模型勝
+                else:
+                    losses += 1  # 舊模型勝
 
             pbar.set_postfix({"Wins": wins, "Draws": draws, "Losses": losses})
             pbar.update(1)

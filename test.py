@@ -1,2 +1,3 @@
-for i in range(6, 11, 10):
-    print(i)
+game_idx = 1
+new_model_plays_red = (game_idx % 2 == 0)
+print(new_model_plays_red)
