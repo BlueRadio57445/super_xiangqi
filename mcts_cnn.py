@@ -340,6 +340,8 @@ def self_play_game(net:ChessNet):
     
 
 def train(net:ChessNet, data, epochs=EPOCHS, batch_size=BATCH_SIZE):
+    print(f"批次數量:{len(data)//batch_size}")
+
     device = next(net.parameters()).device
     optimizer = prodigyopt.Prodigy(net.parameters())
     for epoch in tqdm.tqdm(range(epochs), desc="Training Epochs"):
@@ -354,9 +356,9 @@ def train(net:ChessNet, data, epochs=EPOCHS, batch_size=BATCH_SIZE):
         
             p, v = net(s)
 
-            batch_size = p.size(0)
-            p_flat = p.view(batch_size, -1)
-            pi_flat = pi.view(batch_size, -1)
+            batch_size_dim = p.size(0)
+            p_flat = p.view(batch_size_dim, -1)
+            pi_flat = pi.view(batch_size_dim, -1)
 
             loss = F.cross_entropy(p_flat,pi_flat) + F.mse_loss(v,z)
             optimizer.zero_grad()
