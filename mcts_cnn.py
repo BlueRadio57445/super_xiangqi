@@ -128,12 +128,13 @@ def encode_board_from_node_and_list(node:MCTSNode=None, history_list:list=None):
         else:
             break
     
-    for t, board_state in enumerate(reversed(history_list)):
-        if len(tensor_list) < 8:
-            board_tensor_small = encode_board(board_state)
-            tensor_list.append(board_tensor_small)
-        else:
-            break
+    if history_list:
+        for t, board_state in enumerate(reversed(history_list)):
+            if len(tensor_list) < 8:
+                board_tensor_small = encode_board(board_state)
+                tensor_list.append(board_tensor_small)
+            else:
+                break
 
     while len(tensor_list) < 8:
         tensor_list.append(torch.zeros(14, 10, 9))
@@ -271,8 +272,7 @@ class MCTS:
 def self_play_game(net:ChessNet):
     board_state = BoardState(board=INITIAL)
     mcts = MCTS(net)
-    last8 = deque(maxlen=8)
-    last8.append(board_state)
+    last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
     counts = Counter()
     counts[board_state.board] = 1
     history = []
@@ -289,20 +289,22 @@ def self_play_game(net:ChessNet):
                 value = 0
                 break
             
-            # 下棋
-            pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8)[:7])
-            board_tensor = encode_board_from_node_and_list(history_list=list(last8))
-
+            # 搜尋
+            pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
+            
+            # 選取動作
             legal_moves = list(pi.keys())
             probs = np.array(list(pi.values()))
-            noise = np.random.dirichlet([DIRICHLET_ALPHA] * len(legal_moves))
-            probs = 0.75 * probs + 0.25 * noise
-            probs /= probs.sum() if probs.sum() > 0 else 1.0
-
             action = random.choices(legal_moves, weights=probs)[0] # 待商榷
-            history.append((board_tensor, pi_vector))
-            board_state = board_state.move(action)
+
+            # 紀錄訓練資料
             last8.append(board_state)
+            board_tensor = encode_board_from_node_and_list(history_list=list(last8))
+            history.append((board_tensor, pi_vector))
+
+            # 分水嶺
+            board_state = board_state.move(action)
+            
             counts[board_state.board] += 1
             move_count += 1
             pbar.update(1)
@@ -360,8 +362,7 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
     with tqdm.tqdm(range(n_games), desc="Evaluation Games") as pbar:
         for _ in range(n_games):
             board_state = BoardState(INITIAL)
-            last8 = deque(maxlen=8)
-            last8.append(board_state)
+            last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
             counts = Counter()
             counts[board_state.board] = 1
             move_count = 0
@@ -374,12 +375,20 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                 if counts[board_state.board] >=3:
                     terminal_result = 0
                     break
-
+                
+                # 搜尋
                 mcts = mcts_new if move_count % 2 == 0 else mcts_old
-                pi, _ = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8)[:7])
+                pi, _ = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
+
+                # 選取動作
                 action = max(pi.items(), key=lambda x: x[1])[0]
-                board_state = board_state.move(action)
+
+                # 記錄歷史
                 last8.append(board_state)
+
+                # 分水嶺
+                board_state = board_state.move(action)
+                
                 counts[board_state.board] += 1
                 move_count += 1
 
