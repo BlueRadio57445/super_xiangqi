@@ -346,8 +346,7 @@ def train(net:ChessNet, data, epochs=EPOCHS, batch_size=BATCH_SIZE):
         random.shuffle(data)
         for i in range(0, len(data), batch_size):
             batch = data[i:i+batch_size]
-            if len(batch) < batch_size:
-                continue
+
             states, pis, values = zip(*batch)
             s = torch.cat(states, dim=0).to(device)
             pi = torch.stack(pis).to(device)
