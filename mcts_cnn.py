@@ -40,8 +40,8 @@ N_SIMULATIONS = 10  # MCTS 模擬次數
 BATCH_SIZE = 1024  # mini-batch 大小
 EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
 ITERATIONS = 100  # 訓練幾代模型
-SELF_PLAY_GAMES = 1 # 自我對弈的場數
-EVAL_GAMES = 20  # 評估遊戲數量
+SELF_PLAY_GAMES = 20 # 自我對弈的場數
+EVAL_GAMES = 21  # 評估遊戲數量
 WIN_THRESHOLD = 0.55  # 勝率閾值
 DIRICHLET_ALPHA = 0.3
 
