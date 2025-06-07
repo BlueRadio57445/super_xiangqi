@@ -37,7 +37,7 @@ INITIAL = (
     )
 N_SIMULATIONS = 10  # 論文中的 MCTS 模擬次數
 BATCH_SIZE = 1024  # 論文中的 mini-batch 大小
-TRAINING_STEPS = 700000  # 論文中的訓練步數
+ITERATIONS = 100  # 論文中的訓練步數
 SELF_PLAY_GAMES = 20 # 自我對弈的場數
 EVAL_GAMES = 20  # 論文中的評估遊戲數量
 WIN_THRESHOLD = 0.55  # 論文中的勝率閾值
@@ -418,7 +418,7 @@ if __name__ == "__main__":
         net.load_state_dict(torch.load(model_path))
         best_net.load_state_dict(torch.load(model_path))
 
-    for iteration in tqdm.tqdm(range(TRAINING_STEPS // 1000), desc="Training Iterations"):
+    for iteration in tqdm.tqdm(range(ITERATIONS), desc="Training Iterations"):
         print(f"正在訓練第{iteration}的迭代")
         
         # 自我對弈
