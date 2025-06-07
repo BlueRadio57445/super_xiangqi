@@ -473,4 +473,7 @@ if __name__ == "__main__":
             best_net = copy.deepcopy(net)
             torch.save(best_net.state_dict(), model_path)
             print(f"New model saved with win rate {win_rate:.3f}")
+
+        # 再怎麼樣都加減存一下模型
+        torch.save(net.state_dict(), f"model_{iteration}.pth")
     
