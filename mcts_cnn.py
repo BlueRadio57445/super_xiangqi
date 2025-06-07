@@ -39,7 +39,7 @@ N_SIMULATIONS = 10  # MCTS 模擬次數
 BATCH_SIZE = 1024  # mini-batch 大小
 EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
 ITERATIONS = 100  # 訓練幾代模型
-SELF_PLAY_GAMES = 20 # 自我對弈的場數
+SELF_PLAY_GAMES = 1 # 自我對弈的場數
 EVAL_GAMES = 20  # 評估遊戲數量
 WIN_THRESHOLD = 0.55  # 勝率閾值
 DIRICHLET_ALPHA = 0.3
@@ -372,38 +372,40 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
     mcts_new = MCTS(net_new)
     mcts_old = MCTS(net_old)
 
-    with tqdm.tqdm(range(n_games), desc="Evaluation Games") as pbar:
+    with tqdm.tqdm(range(n_games), desc="Eval BIG") as pbar:
         for _ in range(n_games):
             board_state = BoardState(INITIAL)
             last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
             counts = Counter()
             counts[board_state.board] = 1
             move_count = 0
-            while True:
+            with tqdm.tqdm(desc="Eval Game",leave=False) as pbar2:
+                while True:
 
-                # 勝負與和局
-                terminal_result = board_state.is_terminal()
-                if terminal_result is not None:
-                    break
-                if counts[board_state.board] >=3:
-                    terminal_result = 0
-                    break
-                
-                # 搜尋
-                mcts = mcts_new if move_count % 2 == 0 else mcts_old
-                pi, _ = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
+                    # 勝負與和局
+                    terminal_result = board_state.is_terminal()
+                    if terminal_result is not None:
+                        break
+                    if counts[board_state.board] >=3:
+                        terminal_result = 0
+                        break
+                    
+                    # 搜尋
+                    mcts = mcts_new if move_count % 2 == 0 else mcts_old
+                    pi, _ = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
 
-                # 選取動作
-                action = max(pi.items(), key=lambda x: x[1])[0]
+                    # 選取動作
+                    action = max(pi.items(), key=lambda x: x[1])[0]
 
-                # 記錄歷史
-                last8.append(board_state)
+                    # 記錄歷史
+                    last8.append(board_state)
 
-                # 分水嶺
-                board_state = board_state.move(action)
-                
-                counts[board_state.board] += 1
-                move_count += 1
+                    # 分水嶺
+                    board_state = board_state.move(action)
+                    
+                    counts[board_state.board] += 1
+                    move_count += 1
+                    pbar2.update(1)
 
             if terminal_result == 0:
                 draws +=1
