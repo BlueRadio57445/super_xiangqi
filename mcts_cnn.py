@@ -11,6 +11,7 @@ import tqdm
 from tqdm import trange
 import copy
 import os
+import pickle
 from collections import deque, Counter
 
 # 全局常數
@@ -435,6 +436,18 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
     win_rate = wins / n_games
     return win_rate, wins, draws, losses
 
+def save_dataset_pickle(dataset, iteration, folder="training_data"):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    
+    filename = f"{folder}/dataset_iter_{iteration:04d}.pkl"
+    with open(filename, 'wb') as f:
+        pickle.dump(dataset, f)
+    print(f"Dataset saved to {filename}")
+
+def load_dataset_pickle(filename):
+    with open(filename, 'rb') as f:
+        return pickle.load(f)
 
 if __name__ == "__main__":
     net = ChessNet()
@@ -464,7 +477,9 @@ if __name__ == "__main__":
                 pbar.set_postfix({"Wins": wins, "Draws": draws, "Losses": losses})
                 pbar.update(1)
 
-        
+        # 把費盡心思的訓練資料存下來
+        save_dataset_pickle(dataset, iteration)
+
         train(net, dataset)
 
         win_rate, wins, draws, losses = evaluate(net, best_net)
