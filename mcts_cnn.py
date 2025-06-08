@@ -318,7 +318,7 @@ def self_play_game(net:ChessNet):
             pbar.update(1)
 
             # 勝負與和局
-            value = board_state.is_terminal(owo=True)
+            value = board_state.is_terminal()
             if value is not None:
                 break
 
@@ -409,7 +409,7 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                     pbar2.update(1)
 
                     # 勝負與和局
-                    value = board_state.is_terminal(owo=True)
+                    value = board_state.is_terminal()
                     if value is not None:
                         break
 

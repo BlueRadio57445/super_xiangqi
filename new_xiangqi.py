@@ -170,7 +170,7 @@ class BoardState(namedtuple('BoardState', 'board move_count counter')):
 
         return BoardState(rotated_board_state.board, new_move_count, new_counter)
     
-    def is_terminal(self, owo=False):
+    def is_terminal(self):
         """
         只看當下我方是贏還是輸，不管我什麼顏色，先手或後手。
         """
@@ -178,27 +178,22 @@ class BoardState(namedtuple('BoardState', 'board move_count counter')):
 
         # 和局判斷
         if self.counter[b] >= 3:
-            if owo: print("和局")
             return 0
         # 普通勝負
         if 'K' not in b:
-            if owo: print("輸出-1，最常")
             return -1  # 我方敗
         if 'k' not in b:
-            if owo: print("不該")
             return 1   # 我方勝
         # 檢查當前玩家是否無合法移動
         legal_moves = self.gen_moves()
         if not legal_moves:
             # 我方無合法移動，視為我方敗
-            if owo: print("困，負")
             return -1
         # 檢查敵方是否無合法移動
         black_board = self.rotate()  # 旋轉到敵方視角
         black_legal_moves = black_board.gen_moves()
         if not black_legal_moves:
             # 敵方無合法移動，視為我方勝
-            if owo: print("困，1")
             return 1
         return None
     
