@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import prodigyopt
 import random
-from new_xiangqi import BoardState
+from new_xiangqi import BoardState, start_is_terminal
 import math
 import tqdm
 from tqdm import trange
@@ -63,7 +63,7 @@ class ChessNet(nn.Module):
     def __init__(self, num_res_blocks=3):
         super().__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels=112, out_channels=256, kernel_size=5, padding=2),
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=5, padding=2),
             nn.ReLU(),
             nn.Conv2d(in_channels=256, out_channels=256, kernel_size=5, padding=2),
             nn.ReLU(),
@@ -119,7 +119,7 @@ def encode_board(board_state:BoardState):
     piece_map = {'K':0, 'A':1, 'E':2, 'R':3, 'H':4, 'C':5, 'P':6,
                  'k':7, 'a':8, 'e':9, 'r':10, 'h':11, 'c':12, 'p':13}
     
-    board_tensor = torch.zeros(14, 10, 9)
+    board_tensor = torch.zeros(16, 10, 9)
     board = board_state.board
     for i in range(len(board)):
             row = (i // BOARD_COLUMN) - 2
@@ -129,6 +129,13 @@ def encode_board(board_state:BoardState):
             if piece in piece_map:
                 if 0 <= row < CHESS_ROW and 0 <= col < CHESS_COLUMN:
                     board_tensor[piece_map[piece], row, col] = 1
+
+    repetitions = board_state.counter[board]
+    if repetitions >= 2:
+        board_tensor[14, :, :] = 1  # 第一次重複（第 2 次出現）
+    if repetitions >= 3:
+        board_tensor[15, :, :] = 1  # 第二次重複（第 3 次出現）
+    
     return board_tensor
 
 def encode_board_from_node_and_list(node:MCTSNode=None, history_list:list=None):
@@ -151,7 +158,7 @@ def encode_board_from_node_and_list(node:MCTSNode=None, history_list:list=None):
                 break
 
     while len(tensor_list) < 8:
-        tensor_list.append(torch.zeros(14, 10, 9))
+        tensor_list.append(torch.zeros(16, 10, 9))
 
     board_tensor = torch.cat(tensor_list, dim=0)
     return board_tensor.unsqueeze(0)
@@ -238,13 +245,14 @@ class MCTS:
         pass
 
     def simulate(self, node:MCTSNode, v:torch.Tensor):
-        # TODO:加入平局=0的判斷
+        """代表當前node盤面的價值，還沒有到我擔心的事情"""
         result = node.board_state.is_terminal()
         if result is not None:
             return result
         return v.item()
 
     def backpropagate(self, node:MCTSNode, value):
+        value = -value # 處理我最擔心的事情（因為選擇階段是根據子節點的value選取，所以雖然在這裡看起來輸了，但反而是parent(對手)想選的）
         while node:
             node.visit_count += 1
             node.value_sum += value
@@ -287,22 +295,10 @@ def self_play_game(net:ChessNet):
     board_state = BoardState(board=INITIAL)
     mcts = MCTS(net)
     last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
-    counts = Counter()
-    counts[board_state.board] = 1
     history = []
-    move_count = 0
 
     with tqdm.tqdm(desc="Self-Play Game",leave=False) as pbar:
         while True:
-
-            # 勝負與和局
-            value = board_state.is_terminal(owo=True)
-            if value is not None:
-                break
-            if counts[board_state.board] >=3:
-                value = 0
-                break
-            
             # 搜尋
             pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
             
@@ -319,27 +315,24 @@ def self_play_game(net:ChessNet):
             # 分水嶺
             board_state = board_state.move(action)
             
-            counts[board_state.board] += 1
-            move_count += 1
             pbar.update(1)
 
+            # 勝負與和局
+            value = board_state.is_terminal(owo=True)
+            if value is not None:
+                break
+
+    move_count = board_state.move_count
     data = []
     for i, (s, p) in enumerate(history):
-        if value == 0:  # 平局
-            z = 0
-        else:
-            # 判斷誰最終獲勝
-            red_wins = (value == 1 and move_count % 2 == 0) or (value == -1 and move_count % 2 == 1)
-            if red_wins:
-                z = 1 if i % 2 == 0 else -1  # 紅方勝：紅方局面+1，黑方局面-1
-            else:
-                z = -1 if i % 2 == 0 else 1  # 黑方勝：紅方局面-1，黑方局面+1
+        z = start_is_terminal(value, i, move_count)
         data.append((s, p, z))
 
     # 根據終局結果判斷勝負平
-    if value == 0:
+    game_result = start_is_terminal(value, 0, move_count)
+    if game_result == 0:
         result = (0, 1, 0)  # (wins, draws, losses)
-    elif (value == 1 and move_count % 2 == 0) or (value == -1 and move_count % 2 == 1):
+    elif game_result == 1:
         result = (1, 0, 0)  # 紅方勝
     else:
         result = (0, 0, 1)  # 黑方勝
@@ -386,25 +379,14 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
         for game_idx in range(n_games):
             board_state = BoardState(INITIAL)
             last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
-            counts = Counter()
-            counts[board_state.board] = 1
-            move_count = 0
+            move_count = board_state.move_count
 
             # 偶數場次：新模型先手 (紅方)
             # 奇數場次：舊模型先手 (紅方)
             new_model_plays_red = (game_idx % 2 == 0)
 
             with tqdm.tqdm(desc="Eval Game",leave=False) as pbar2:
-                while True:
-
-                    # 勝負與和局
-                    terminal_result = board_state.is_terminal(owo=True)
-                    if terminal_result is not None:
-                        break
-                    if counts[board_state.board] >=3:
-                        terminal_result = 0
-                        break
-                    
+                while True:                    
                     # 選擇模型：紅方 (move_count % 2 == 0) 時
                     if move_count % 2 == 0:  # 紅方回合
                         mcts = mcts_new if new_model_plays_red else mcts_old
@@ -422,19 +404,23 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
 
                     # 分水嶺
                     board_state = board_state.move(action)
-                    
-                    counts[board_state.board] += 1
-                    move_count += 1
+                    move_count = board_state.move_count
+
                     pbar2.update(1)
 
+                    # 勝負與和局
+                    value = board_state.is_terminal(owo=True)
+                    if value is not None:
+                        break
+
             # 計算結果 (從新模型的角度)
-            if terminal_result == 0:
+            game_result = start_is_terminal(value, 0, move_count)
+            if game_result == 0:
                 draws += 1
             else:
                 # 判斷新模型是否獲勝
-                red_wins = (terminal_result == 1 and move_count % 2 == 0) or (terminal_result == -1 and move_count % 2 == 1)
-                
-                if (new_model_plays_red and red_wins) or (not new_model_plays_red and not red_wins):
+                red_wins = (game_result == 1)
+                if new_model_plays_red == red_wins:
                     wins += 1  # 新模型勝
                 else:
                     losses += 1  # 舊模型勝

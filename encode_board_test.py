@@ -61,10 +61,10 @@ def test_case_1_only_node_history(initial_board):
     
     print(f"節點鏈長度: {get_node_chain_length(current)}")
     print(f"結果張量形狀: {result.shape}")
-    print(f"預期形狀: (1, 112, 10, 9)")
+    print(f"預期形狀: (1, 128, 10, 9)")
     
     # 驗證形狀正確
-    assert result.shape == (1, 112, 10, 9), f"形狀錯誤: {result.shape}"
+    assert result.shape == (1, 128, 10, 9), f"形狀錯誤: {result.shape}"
     
     # 驗證歷史順序
     verify_history_order(current, None, result)
@@ -92,7 +92,7 @@ def test_case_2_only_list_history(initial_board):
     print(f"結果張量形狀: {result.shape}")
     
     # 驗證形狀正確
-    assert result.shape == (1, 112, 10, 9), f"形狀錯誤: {result.shape}"
+    assert result.shape == (1, 128, 10, 9), f"形狀錯誤: {result.shape}"
     
     # 驗證歷史順序
     verify_history_order(None, history_list, result)
@@ -134,7 +134,7 @@ def test_case_3_both_histories(initial_board):
     print(f"結果張量形狀: {result.shape}")
     
     # 驗證形狀正確
-    assert result.shape == (1, 112, 10, 9), f"形狀錯誤: {result.shape}"
+    assert result.shape == (1, 128, 10, 9), f"形狀錯誤: {result.shape}"
     
     # 驗證node歷史優先
     verify_node_priority(current, history_list, result)
@@ -162,7 +162,7 @@ def test_case_4_insufficient_history(initial_board):
     print(f"結果張量形狀: {result.shape}")
     
     # 驗證形狀正確
-    assert result.shape == (1, 112, 10, 9), f"形狀錯誤: {result.shape}"
+    assert result.shape == (1, 128, 10, 9), f"形狀錯誤: {result.shape}"
     
     # 驗證補零正確
     verify_zero_padding(result, len(history_list))
@@ -174,14 +174,14 @@ def test_case_5_boundary_cases():
     
     # 測試空輸入
     result = encode_board_from_node_and_list(node=None, history_list=None)
-    assert result.shape == (1, 112, 10, 9), f"空輸入形狀錯誤: {result.shape}"
+    assert result.shape == (1, 128, 10, 9), f"空輸入形狀錯誤: {result.shape}"
     
     # 驗證全為零
     assert torch.all(result == 0), "空輸入應該全為零"
     
     # 測試空列表
     result = encode_board_from_node_and_list(node=None, history_list=[])
-    assert result.shape == (1, 112, 10, 9), f"空列表形狀錯誤: {result.shape}"
+    assert result.shape == (1, 128, 10, 9), f"空列表形狀錯誤: {result.shape}"
     assert torch.all(result == 0), "空列表應該全為零"
     
     print("✓ 測試案例5通過")
@@ -260,7 +260,7 @@ def verify_zero_padding(result, actual_history_length):
             layer_end = (layer_idx + 1) * 14
             
             # 這裡需要根據實際的張量結構調整
-            # 由於我們使用的是 (1, 112, 10, 9)，需要相應調整檢查邏輯
+            # 由於我們使用的是 (1, 128, 10, 9)，需要相應調整檢查邏輯
 
 def create_test_board_sequence():
     """創建一個測試用的棋盤序列"""

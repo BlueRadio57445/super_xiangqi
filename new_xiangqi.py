@@ -170,7 +170,7 @@ class BoardState(namedtuple('BoardState', 'board move_count counter')):
 
         return BoardState(rotated_board_state.board, new_move_count, new_counter)
     
-    def is_terminal(self, owo=True):
+    def is_terminal(self, owo=False):
         """
         只看當下我方是贏還是輸，不管我什麼顏色，先手或後手。
         """
@@ -202,17 +202,17 @@ class BoardState(namedtuple('BoardState', 'board move_count counter')):
             return 1
         return None
     
-def start_is_terminal(terminal_result, current_move_count, start_move_count=0):
+def start_is_terminal(terminal_result, start_move_count=0, end_move_count=0):
     """
     用來判斷start那一回合是贏還是輸，不然整天搞那個太麻煩了
     輸入：
-    terminal_result：1或-1或0
-    current_move_count：整數
-    start_move_count：整數
+    terminal_result：1或-1或0，current_move_count當下的結果
+    start_move_count：非負整數
+    end_move_count：非負整數
     """
     if terminal_result == 0:
         return 0 # 和局
-    d_move_count = current_move_count - start_move_count
+    d_move_count = end_move_count - start_move_count
     start_wins = (terminal_result == 1 and d_move_count % 2 == 0) or (terminal_result == -1 and d_move_count % 2 == 1)
     if start_wins:
         return 1 # 贏
