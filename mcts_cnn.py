@@ -40,9 +40,9 @@ N_SIMULATIONS = 10  # MCTS 模擬次數
 BATCH_SIZE = 1024  # mini-batch 大小
 EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
 ITERATIONS = 100  # 訓練幾代模型
-SELF_PLAY_GAMES = 20 # 自我對弈的場數
-EVAL_GAMES = 21  # 評估遊戲數量
-WIN_THRESHOLD = 0.55  # 勝率閾值
+SELF_PLAY_GAMES = 30 # 自我對弈的場數
+EVAL_GAMES = 6  # 評估遊戲數量
+WIN_THRESHOLD = 0.49  # 勝率閾值
 DIRICHLET_ALPHA = 0.3
 
 class ResidualBlock(nn.Module):
@@ -296,7 +296,7 @@ def self_play_game(net:ChessNet):
         while True:
 
             # 勝負與和局
-            value = board_state.is_terminal()
+            value = board_state.is_terminal(owo=True)
             if value is not None:
                 break
             if counts[board_state.board] >=3:
@@ -325,7 +325,15 @@ def self_play_game(net:ChessNet):
 
     data = []
     for i, (s, p) in enumerate(history):
-        z = value if i % 2 == 0 else -value
+        if value == 0:  # 平局
+            z = 0
+        else:
+            # 判斷誰最終獲勝
+            red_wins = (value == 1 and move_count % 2 == 0) or (value == -1 and move_count % 2 == 1)
+            if red_wins:
+                z = 1 if i % 2 == 0 else -1  # 紅方勝：紅方局面+1，黑方局面-1
+            else:
+                z = -1 if i % 2 == 0 else 1  # 黑方勝：紅方局面-1，黑方局面+1
         data.append((s, p, z))
 
     # 根據終局結果判斷勝負平
@@ -390,7 +398,7 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                 while True:
 
                     # 勝負與和局
-                    terminal_result = board_state.is_terminal()
+                    terminal_result = board_state.is_terminal(owo=True)
                     if terminal_result is not None:
                         break
                     if counts[board_state.board] >=3:

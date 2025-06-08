@@ -156,21 +156,25 @@ class BoardState(namedtuple('BoardState', 'board')):
         board = self.put(board, i, '.')
         return BoardState(board).rotate()
     
-    def is_terminal(self):
+    def is_terminal(self, owo=True):
         b = self.board
         if 'K' not in b:
+            if owo: print("輸出-1，最常")
             return -1  # 黑方勝
         if 'k' not in b:
+            if owo: print("不該")
             return 1   # 紅方勝
         # 檢查當前玩家（紅方）是否無合法移動
         legal_moves = self.gen_moves()
         if not legal_moves:
             # 紅方無合法移動，視為黑方勝
+            if owo: print("困，負")
             return -1
         # 檢查黑方是否無合法移動
         black_board = self.rotate()  # 旋轉到黑方視角
         black_legal_moves = black_board.gen_moves()
         if not black_legal_moves:
             # 黑方無合法移動，視為紅方勝
+            if owo: print("困，1")
             return 1
         return None
