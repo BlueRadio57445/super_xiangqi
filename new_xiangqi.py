@@ -4,7 +4,7 @@
 import argparse
 import re
 import time
-from collections import namedtuple
+from collections import namedtuple, Counter
 from itertools import count
 
 ###############################################################################
@@ -64,10 +64,18 @@ directions = {
 # Chess logic
 ###############################################################################
 
-class BoardState(namedtuple('BoardState', 'board')):
+class BoardState(namedtuple('BoardState', 'board move_count counter')):
     """ A state of a chess game
     board -- a BOARD_ROW*BOARD_COLUMN char representation of the board
+    move_count -- number of moves without capture (for 50-move rule equivalent)
+    counter -- Counter object tracking board position repetitions
     """
+
+    def __new__(cls, board, move_count=0, counter=None):
+        if counter is None:
+            counter = Counter()
+            counter[board] = 1
+        return super(BoardState, cls).__new__(cls, board, move_count, counter)
 
     def gen_moves(self, piece_pos=None):
         # For each of our pieces, iterate through each possible 'ray' of moves,
@@ -142,7 +150,7 @@ class BoardState(namedtuple('BoardState', 'board')):
 
     def rotate(self):
         """ Rotates the board"""
-        return BoardState(self.board[::-1].swapcase())
+        return BoardState(self.board[::-1].swapcase(), self.move_count, self.counter)
 
     def put(self, board, i, p):
         return board[:i] + p + board[i + 1:]
@@ -154,27 +162,64 @@ class BoardState(namedtuple('BoardState', 'board')):
         # Actual move
         board = self.put(board, j, board[i])
         board = self.put(board, i, '.')
-        return BoardState(board).rotate()
+
+        rotated_board_state = BoardState(board).rotate()
+        new_move_count = self.move_count + 1
+        new_counter = self.counter.copy()
+        new_counter[rotated_board_state.board] += 1
+
+        return BoardState(rotated_board_state.board, new_move_count, new_counter)
     
     def is_terminal(self, owo=True):
+        """
+        只看當下我方是贏還是輸，不管我什麼顏色，先手或後手。
+        """
         b = self.board
+
+        # 和局判斷
+        if self.counter[b] >= 3:
+            if owo: print("和局")
+            return 0
+        # 普通勝負
         if 'K' not in b:
             if owo: print("輸出-1，最常")
-            return -1  # 黑方勝
+            return -1  # 我方敗
         if 'k' not in b:
             if owo: print("不該")
-            return 1   # 紅方勝
-        # 檢查當前玩家（紅方）是否無合法移動
+            return 1   # 我方勝
+        # 檢查當前玩家是否無合法移動
         legal_moves = self.gen_moves()
         if not legal_moves:
-            # 紅方無合法移動，視為黑方勝
+            # 我方無合法移動，視為我方敗
             if owo: print("困，負")
             return -1
-        # 檢查黑方是否無合法移動
-        black_board = self.rotate()  # 旋轉到黑方視角
+        # 檢查敵方是否無合法移動
+        black_board = self.rotate()  # 旋轉到敵方視角
         black_legal_moves = black_board.gen_moves()
         if not black_legal_moves:
-            # 黑方無合法移動，視為紅方勝
+            # 敵方無合法移動，視為我方勝
             if owo: print("困，1")
             return 1
         return None
+    
+def start_is_terminal(terminal_result, current_move_count, start_move_count=0):
+    """
+    用來判斷start那一回合是贏還是輸，不然整天搞那個太麻煩了
+    輸入：
+    terminal_result：1或-1或0
+    current_move_count：整數
+    start_move_count：整數
+    """
+    if terminal_result == 0:
+        return 0 # 和局
+    d_move_count = current_move_count - start_move_count
+    start_wins = (terminal_result == 1 and d_move_count % 2 == 0) or (terminal_result == -1 and d_move_count % 2 == 1)
+    if start_wins:
+        return 1 # 贏
+    else:
+        return -1 # 輸
+
+
+
+if __name__=="__main__":
+    pass
