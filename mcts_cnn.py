@@ -272,15 +272,18 @@ class MCTS:
         return p.squeeze(0), v
 
     def add_dirichlet_noise(self, move_probs: dict, epsilon=0.25, alpha=DIRICHLET_ALPHA):
-        """簡潔版本"""
+        """使用PyTorch的Dirichlet噪聲混合函數"""
         if not move_probs:
             return move_probs
         
         moves = list(move_probs.keys())
-        priors = np.array(list(move_probs.values()))
-        noise = np.random.dirichlet([alpha] * len(moves))
+        priors = torch.stack(list(move_probs.values()))
+        device = priors.device
         
-        # 混合
+        # 生成Dirichlet noise (在同一設備上)
+        dirichlet = torch.distributions.Dirichlet(torch.full((len(moves),), alpha, device=device))
+        noise = dirichlet.sample()
+        
         mixed_probs = (1 - epsilon) * priors + epsilon * noise
         
         return dict(zip(moves, mixed_probs))
