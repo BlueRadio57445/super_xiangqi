@@ -41,8 +41,8 @@ BATCH_SIZE = 1024  # mini-batch 大小
 EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
 ITERATIONS = 100  # 訓練幾代模型
 SELF_PLAY_GAMES = 30 # 自我對弈的場數
-EVAL_GAMES = 6  # 評估遊戲數量
-WIN_THRESHOLD = 0.49  # 勝率閾值
+EVAL_GAMES = 10  # 評估遊戲數量
+WIN_THRESHOLD = 0.55  # 勝率閾值
 DIRICHLET_ALPHA = 0.3
 
 class ResidualBlock(nn.Module):
@@ -234,10 +234,11 @@ class MCTS:
             node = max(node.children.values(), key=lambda c: self.puct(node, c))
         return node
 
-    def expand(self, node:MCTSNode, p:torch.Tensor):
+    def expand(self, node:MCTSNode, p:torch.Tensor, is_root:bool=False):
         if node.board_state.is_terminal() is not None:
             return
         move_probs = decode_action(node.board_state, p)
+        if is_root and len(move_probs) > 0: move_probs = self.add_dirichlet_noise(move_probs)
         for move, prob in move_probs.items():
             new_board_state = node.board_state.move(move)
             node.children[move] = MCTSNode(new_board_state, node, prob)
@@ -270,14 +271,29 @@ class MCTS:
             p = p_flat.view(batch_size, 10, 9, 52)
         return p.squeeze(0), v
 
+    def add_dirichlet_noise(self, move_probs: dict, epsilon=0.25, alpha=DIRICHLET_ALPHA):
+        """簡潔版本"""
+        if not move_probs:
+            return move_probs
+        
+        moves = list(move_probs.keys())
+        priors = np.array(list(move_probs.values()))
+        noise = np.random.dirichlet([alpha] * len(moves))
+        
+        # 混合
+        mixed_probs = (1 - epsilon) * priors + epsilon * noise
+        
+        return dict(zip(moves, mixed_probs))
+
     def search(self, board_state:BoardState, n_simulations, history_list):
         root_node = MCTSNode(board_state)
         for _ in range(n_simulations):
             node = root_node
             node = self.select(node)
             p, v = self.call_network(node, history_list)
+            is_root = (node == root_node)
             if not node.is_expanded:
-                self.expand(node, p)
+                self.expand(node, p, is_root=is_root)
             value = self.simulate(node, v)
             self.backpropagate(node, value)
 
