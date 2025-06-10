@@ -234,11 +234,11 @@ class MCTS:
             node = max(node.children.values(), key=lambda c: self.puct(node, c))
         return node
 
-    def expand(self, node:MCTSNode, p:torch.Tensor, is_root:bool=False):
+    def expand(self, node:MCTSNode, p:torch.Tensor, is_root:bool=False, add_noise=False):
         if node.board_state.is_terminal() is not None:
             return
         move_probs = decode_action(node.board_state, p)
-        if is_root and len(move_probs) > 0: move_probs = self.add_dirichlet_noise(move_probs)
+        if is_root and add_noise and len(move_probs) > 0: move_probs = self.add_dirichlet_noise(move_probs)
         for move, prob in move_probs.items():
             new_board_state = node.board_state.move(move)
             node.children[move] = MCTSNode(new_board_state, node, prob)
@@ -288,7 +288,7 @@ class MCTS:
         
         return dict(zip(moves, mixed_probs))
 
-    def search(self, board_state:BoardState, n_simulations, history_list):
+    def search(self, board_state:BoardState, n_simulations, history_list, add_noise=False):
         root_node = MCTSNode(board_state)
         for _ in range(n_simulations):
             node = root_node
@@ -296,7 +296,7 @@ class MCTS:
             p, v = self.call_network(node, history_list)
             is_root = (node == root_node)
             if not node.is_expanded:
-                self.expand(node, p, is_root=is_root)
+                self.expand(node, p, is_root=is_root, add_noise=add_noise)
             value = self.simulate(node, v)
             self.backpropagate(node, value)
 
@@ -319,7 +319,7 @@ def self_play_game(net:ChessNet):
     with tqdm.tqdm(desc="Self-Play Game",leave=False) as pbar:
         while True:
             # 搜尋
-            pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
+            pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8), add_noise=True)
             
             # 選取動作
             legal_moves = list(pi.keys())
