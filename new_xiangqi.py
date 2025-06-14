@@ -119,8 +119,8 @@ class BoardState(namedtuple('BoardState', 'board move_count counter')):
                             cannon_flag = True
                             continue
                     # horse and elephant leg should not be crappy
-                    if p in ('H', 'E') and self.board[i + step] != '.':
-                        break
+                    #if p in ('H', 'E') and self.board[i + step] != '.':
+                    #    break
                     # king and advisor should stay in palace
                     if p in ('A', 'K'):
                         row, column = j // BOARD_COLUMN, j % BOARD_COLUMN
@@ -133,14 +133,14 @@ class BoardState(namedtuple('BoardState', 'board move_count counter')):
                     if p == 'P' and j // BOARD_COLUMN > 6 and d in (E, W):
                         break
                     # two kings cannot see each other
-                    black_king = self.board.index('k')
-                    if p == 'K':
-                        red_king = j
-                    else:
-                        red_king = self.board.index('K')
-                    if black_king % BOARD_COLUMN == red_king % BOARD_COLUMN:
-                        if not any(piece != '.' for piece in self.board[black_king+BOARD_COLUMN:red_king:BOARD_COLUMN]):
-                            break
+                    #black_king = self.board.index('k')
+                    #if p == 'K':
+                    #    red_king = j
+                    #else:
+                    #    red_king = self.board.index('K')
+                    #if black_king % BOARD_COLUMN == red_king % BOARD_COLUMN:
+                    #    if not any(piece != '.' for piece in self.board[black_king+BOARD_COLUMN:red_king:BOARD_COLUMN]):
+                    #        break
 
                     # Record Move
                     moves.append((p, i, j))
