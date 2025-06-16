@@ -1,18 +1,51 @@
 # 這個版本原本以為可以加速訓練速度，但實際上反而更慢了
 # 也許我哪天會需要這個版本吧？
+import torch
+import torch.jit as jit
+import math
+from mcts_cnn import ChessNet, MCTSNode, decode_action, encode_action, encode_board_from_node_and_list, DIRICHLET_ALPHA, INITIAL
+from new_xiangqi import BoardState, start_is_terminal
+from collections import deque
+import tqdm
+import numpy as np
+import random
 
-class MCTS:
+N_SIMULATIONS = 50
+
+@jit.script
+def fast_puct_calc(visit_counts: torch.Tensor, value_sums: torch.Tensor, 
+                   priors: torch.Tensor, parent_visits: int, c_puct: float):
+    values = torch.where(visit_counts > 0, value_sums / visit_counts, torch.zeros_like(visit_counts))
+    exploration = c_puct * priors * math.sqrt(float(parent_visits)) / (1.0 + visit_counts)
+    return values + exploration
+
+class ChickenMCTS:
     def __init__(self, net:ChessNet):
         self.net = net
         self.c_puct = 1.5
         self.device = next(net.parameters()).device
+        self.bonus = 10
 
     def puct(self, node:MCTSNode, child:MCTSNode):
         return child.value() + self.c_puct * child.prior * math.sqrt(node.visit_count) / (1 + child.visit_count)
 
-    def select(self, node:MCTSNode):
-        while (node.board_state.is_terminal() is None) and node.is_expanded :
-            node = max(node.children.values(), key=lambda c: self.puct(node, c))
+    def select(self, node: MCTSNode):
+        while (node.board_state.is_terminal() is None) and node.is_expanded:
+            children = list(node.children.values())
+            if len(children) <= 1:
+                if children:
+                    node = children[0]
+                break
+                
+            # 使用 JIT 編譯的函數
+            visit_counts = torch.tensor([c.visit_count for c in children], dtype=torch.float32)
+            value_sums = torch.tensor([c.value_sum for c in children], dtype=torch.float32)  
+            priors = torch.tensor([c.prior for c in children], dtype=torch.float32)
+            
+            scores = fast_puct_calc(visit_counts, value_sums, priors, node.visit_count, self.c_puct)
+            best_idx = torch.argmax(scores).item()
+            node = children[best_idx]
+            
         return node
 
     def expand(self, node:MCTSNode, p:torch.Tensor, is_root:bool=False, add_noise=False):
@@ -30,7 +63,8 @@ class MCTS:
         """代表當前node盤面的價值，還沒有到我擔心的事情"""
         result = node.board_state.is_terminal()
         if result is not None:
-            return result
+            self.bonus += 1
+            return 10*result
         return v.item()
 
     def backpropagate(self, node:MCTSNode, value):
@@ -93,6 +127,16 @@ class MCTS:
     def search(self, board_state:BoardState, n_simulations, history_list, add_noise=False):
         root_node = MCTSNode(board_state)
 
+        # 將軍檢查
+        for action in root_node.board_state.gen_moves():
+            if root_node.board_state.move(action).is_terminal() == -1:
+                pi = {}
+                pi_vector = torch.zeros(10, 9, 52)
+                pi[action] = 1
+                from_row, from_col, channel = encode_action(action)
+                pi_vector[from_row][from_col][channel] = 1
+                return pi, pi_vector
+
         # 先為根節點單獨做一次
         node = root_node
         is_root = (node == root_node)
@@ -113,6 +157,18 @@ class MCTS:
                 value = self.simulate(child, v_dict[move])
                 self.backpropagate(child, value)
 
+        # 額外確認
+        for _ in range(self.bonus):
+            node = root_node
+            node = self.select(node)
+            if node.parent is not None: node = node.parent
+            p_dict, v_dict = self.batch_call_network(node.children, history_list)
+            for move, child in node.children.items():
+                if not child.is_expanded:
+                    self.expand(child, p_dict[move])
+                value = self.simulate(child, v_dict[move])
+                self.backpropagate(child, value)
+
         pi = {}
         pi_vector = torch.zeros(10, 9, 52)
         total_visits = sum(child.visit_count for child in root_node.children.values())
@@ -122,3 +178,51 @@ class MCTS:
             pi_vector[from_row][from_col][channel] = child.visit_count / total_visits if total_visits > 0 else 0
         
         return pi, pi_vector
+    
+def chicken_self_play_game(net:ChessNet):
+    board_state = BoardState(board=INITIAL)
+    mcts = ChickenMCTS(net)
+    last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
+    history = []
+
+    with tqdm.tqdm(desc="Self-Play Game",leave=False) as pbar:
+        while True:
+            # 搜尋
+            pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8), add_noise=True)
+            
+            # 選取動作
+            legal_moves = list(pi.keys())
+            probs = np.array(list(pi.values()))
+            action = random.choices(legal_moves, weights=probs)[0] # 待商榷
+
+            # 紀錄訓練資料
+            last8.append(board_state)
+            board_tensor = encode_board_from_node_and_list(history_list=list(last8))
+            history.append((board_tensor, pi_vector))
+
+            # 分水嶺
+            board_state = board_state.move(action)
+            
+            pbar.update(1)
+
+            # 勝負與和局
+            value = board_state.is_terminal()
+            if value is not None:
+                break
+
+    move_count = board_state.move_count
+    data = []
+    for i, (s, p) in enumerate(history):
+        z = start_is_terminal(value, i, move_count)
+        data.append((s, p, z))
+
+    # 根據終局結果判斷勝負平
+    game_result = start_is_terminal(value, 0, move_count)
+    if game_result == 0:
+        result = (0, 1, 0)  # (wins, draws, losses)
+    elif game_result == 1:
+        result = (1, 0, 0)  # 紅方勝
+    else:
+        result = (0, 0, 1)  # 黑方勝
+
+    return data, result

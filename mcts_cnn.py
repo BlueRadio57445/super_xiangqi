@@ -13,6 +13,7 @@ import copy
 import os
 import pickle
 from collections import deque, Counter
+import torch.jit as jit
 
 # 全局常數
 CHESS_ROW = 10
@@ -36,7 +37,7 @@ INITIAL = (
     '          \n'
     '          \n'
     )
-N_SIMULATIONS = 50  # MCTS 模擬次數
+N_SIMULATIONS = 800  # MCTS 模擬次數
 BATCH_SIZE = 1024  # mini-batch 大小
 EPOCHS = 20 # 一份訓練資料要訓練幾個 epoch
 ITERATIONS = 100  # 訓練幾代模型
@@ -220,6 +221,13 @@ def decode_action(board_state:BoardState, policy:torch.Tensor):
             move_probs[move] /= total_prob
     return move_probs
 
+@jit.script
+def fast_puct_calc(visit_counts: torch.Tensor, value_sums: torch.Tensor, 
+                   priors: torch.Tensor, parent_visits: int, c_puct: float):
+    values = torch.where(visit_counts > 0, value_sums / visit_counts, torch.zeros_like(visit_counts))
+    exploration = c_puct * priors * math.sqrt(float(parent_visits)) / (1.0 + visit_counts)
+    return values + exploration
+
 class MCTS:
     def __init__(self, net:ChessNet):
         self.net = net
@@ -229,9 +237,23 @@ class MCTS:
     def puct(self, node:MCTSNode, child:MCTSNode):
         return child.value() + self.c_puct * child.prior * math.sqrt(node.visit_count) / (1 + child.visit_count)
 
-    def select(self, node:MCTSNode):
-        while (node.board_state.is_terminal() is None) and node.is_expanded :
-            node = max(node.children.values(), key=lambda c: self.puct(node, c))
+    def select(self, node: MCTSNode):
+        while (node.board_state.is_terminal() is None) and node.is_expanded:
+            children = list(node.children.values())
+            if len(children) <= 1:
+                if children:
+                    node = children[0]
+                break
+                
+            # 使用 JIT 編譯的函數
+            visit_counts = torch.tensor([c.visit_count for c in children], dtype=torch.float32)
+            value_sums = torch.tensor([c.value_sum for c in children], dtype=torch.float32)  
+            priors = torch.tensor([c.prior for c in children], dtype=torch.float32)
+            
+            scores = fast_puct_calc(visit_counts, value_sums, priors, node.visit_count, self.c_puct)
+            best_idx = torch.argmax(scores).item()
+            node = children[best_idx]
+            
         return node
 
     def expand(self, node:MCTSNode, p:torch.Tensor, is_root:bool=False, add_noise=False):
@@ -287,9 +309,27 @@ class MCTS:
         mixed_probs = (1 - epsilon) * priors + epsilon * noise
         
         return dict(zip(moves, mixed_probs))
+    
+    def checkmate_check(self, root_node):
+        # 將軍檢查
+        for action in root_node.board_state.gen_moves():
+            if root_node.board_state.move(action).is_terminal() == -1:
+                pi = {}
+                pi_vector = torch.zeros(10, 9, 52)
+                pi[action] = 1
+                from_row, from_col, channel = encode_action(action)
+                pi_vector[from_row][from_col][channel] = 1
+                return pi, pi_vector
+        return None
 
     def search(self, board_state:BoardState, n_simulations, history_list, add_noise=False):
         root_node = MCTSNode(board_state)
+
+        fast_result = self.checkmate_check(root_node)
+        if fast_result is not None:
+            pi, pi_vector = fast_result
+            return pi, pi_vector
+
         for _ in range(n_simulations):
             node = root_node
             node = self.select(node)
@@ -393,11 +433,13 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
     wins, draws, losses = 0, 0, 0
     mcts_new = MCTS(net_new)
     mcts_old = MCTS(net_old)
+    big_data = []
 
     with tqdm.tqdm(range(n_games), desc="Eval BIG") as pbar:
         for game_idx in range(n_games):
             board_state = BoardState(INITIAL)
             last8 = deque(maxlen=8) # 純歷史，不包含當前狀態
+            history = []
             move_count = board_state.move_count
 
             # 偶數場次：新模型先手 (紅方)
@@ -413,13 +455,15 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                         mcts = mcts_old if new_model_plays_red else mcts_new
 
                     # 搜尋
-                    pi, _ = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
+                    pi, pi_vector = mcts.search(board_state, N_SIMULATIONS, history_list=list(last8))
 
                     # 選取動作
                     action = max(pi.items(), key=lambda x: x[1])[0]
 
                     # 記錄歷史
                     last8.append(board_state)
+                    board_tensor = encode_board_from_node_and_list(history_list=list(last8))
+                    history.append((board_tensor, pi_vector))
 
                     # 分水嶺
                     board_state = board_state.move(action)
@@ -431,6 +475,11 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
                     value = board_state.is_terminal()
                     if value is not None:
                         break
+            data = []
+            for i, (s, p) in enumerate(history):
+                z = start_is_terminal(value, i, move_count)
+                data.append((s, p, z))
+            big_data.extend(data)
 
             # 計算結果 (從新模型的角度)
             game_result = start_is_terminal(value, 0, move_count)
@@ -448,7 +497,7 @@ def evaluate(net_new: ChessNet, net_old: ChessNet, n_games=EVAL_GAMES):
             pbar.update(1)
 
     win_rate = wins / n_games
-    return win_rate, wins, draws, losses
+    return win_rate, wins, draws, losses, big_data
 
 def save_dataset_pickle(dataset, iteration, folder="training_data"):
     if not os.path.exists(folder):
@@ -469,7 +518,7 @@ if __name__ == "__main__":
     net.to(device)
     best_net = copy.deepcopy(net)
     best_net.to(device)
-    model_path = "best_model.pth"
+    model_path = "best_model_2.pth"
 
     if os.path.exists(model_path):
         net.load_state_dict(torch.load(model_path))
@@ -496,7 +545,8 @@ if __name__ == "__main__":
 
         train(net, dataset)
 
-        win_rate, wins, draws, losses = evaluate(net, best_net)
+        win_rate, wins, draws, losses, eval_data = evaluate(net, best_net)
+        save_dataset_pickle(eval_data, iteration, "eval_data")
 
         if win_rate > WIN_THRESHOLD:
             best_net = copy.deepcopy(net)
